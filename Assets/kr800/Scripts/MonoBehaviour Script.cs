@@ -14,16 +14,22 @@ public class MonoBehaviourScript : MonoBehaviour
     public float[] forceLimit = { 15000, 18000, 15000, 5750, 5700, 2800 };
 
 
-    public float[] maxSpeed   = { 80, 60, 60, 90, 80, 130 };  // Grad pro Sekunde (Werte der URDF)
-    public float[] homeAngles = { 0, -90, 90, 0, 0, 0 };      // Startpose
-    float[] driveAngles = new float[6];                        // Ziel, das wirklich ans Gelenk geht
+    public float[] maxSpeed   = { 80, 60, 60, 90, 80, 130 };
+    public float[] homeAngles = { 0, -90, 90, 0, 0, 0 };
+    float[] driveAngles = new float[6];
 
 
-    public bool loop = true;                      // Programm wiederholen?
-    public float pauseSeconds = 0.5f;             // Pause nach jeder Pose
+    public bool loop = true;
+    public float pauseSeconds = 0.5f;
 
-    List<float[]> poses = new List<float[]>();    // die gespeicherten Posen
+    List<float[]> poses = new List<float[]>();
+    List<int> actions = new List<int>();
+
+    int nextAction = 0;
+
     bool playing = false;
+
+    public SuctionCup vacuumSuction;
 
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -63,7 +69,7 @@ public class MonoBehaviourScript : MonoBehaviour
 
     void OnGUI()
     {
-        GUILayout.BeginArea(new Rect(10, 10, 250, 220), GUI.skin.box);
+        GUILayout.BeginArea(new Rect(10, 10, 500, 220), GUI.skin.box);
 
         for (int i = 0; i < joints.Length; i++)
         {
@@ -83,7 +89,17 @@ public class MonoBehaviourScript : MonoBehaviour
                 targetAngles[i] = homeAngles[i];
         }
         if (GUILayout.Button("Speichern") && !playing)
+        {
             poses.Add((float[])targetAngles.Clone());
+            actions.Add(nextAction);
+            nextAction = 0;
+        }
+        if (GUILayout.Button("Vakuum an") && !playing)
+            nextAction = 1;
+        if (GUILayout.Button("Vakuum aus") && !playing)
+            nextAction = 2;
+        if (GUILayout.Button("No Action") && !playing)
+            nextAction = 0;
         if (GUILayout.Button("Play") && !playing && poses.Count > 0)
             StartCoroutine(PlayProgram());
         if (GUILayout.Button("Stopp"))
@@ -92,25 +108,36 @@ public class MonoBehaviourScript : MonoBehaviour
             playing = false;
         }
         if (GUILayout.Button("Löschen") && !playing)
+        {
             poses.Clear();
+            actions.Clear();
+        }
         GUILayout.EndHorizontal();
 
-        GUILayout.Label("Posen: " + poses.Count);
+        string[] aktionsNamen = { "keine", "Vakuum an", "Vakuum aus" };
+        GUILayout.Label("Posen: " + poses.Count + "   Nächste Aktion: " + aktionsNamen[nextAction]);
 
         GUILayout.EndArea();
     }
 
-    IEnumerator PlayProgram()
+   IEnumerator PlayProgram()
     {
         playing = true;
         do
         {
-            foreach (float[] pose in poses)
+            for (int i = 0; i < poses.Count; i++)
             {
-                for (int i = 0; i < joints.Length; i++)
-                    targetAngles[i] = pose[i];
+                for (int j = 0; j < joints.Length; j++)
+                    targetAngles[j] = poses[i][j];
 
                 yield return new WaitUntil(PoseReached);
+                yield return new WaitForSeconds(pauseSeconds);
+
+                if (actions[i] == 1)
+                    vacuumSuction.Grab();
+                else if (actions[i] == 2)
+                    vacuumSuction.Release();
+
                 yield return new WaitForSeconds(pauseSeconds);
             }
         } while (loop);
